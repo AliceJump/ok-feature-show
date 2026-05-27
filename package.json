@@ -1,0 +1,30 @@
+{
+    "name": "ok-feature-show",
+    "displayName": "OK Feature Show",
+    "description": "Python Coco Feature Preview Extension",
+    "version": "0.0.1",
+    "publisher": "local",
+    "license": "ISC",
+    "engines": {
+        "vscode": "^1.90.0"
+    },
+    "categories": [
+        "Other"
+    ],
+    "activationEvents": [
+        "onLanguage:python",
+        "onStartupFinished"
+    ],
+    "main": "./dist/extension.js",
+    "contributes": {},
+    "scripts": {
+        "build": "tsc -p .",
+        "watch": "tsc -watch -p ."
+    },
+    "devDependencies": {
+        "@types/node": "^20.19.41",
+        "@types/vscode": "^1.90.0",
+        "@vscode/test-electron": "^2.5.2",
+        "typescript": "^5.0.0"
+    }
+}
