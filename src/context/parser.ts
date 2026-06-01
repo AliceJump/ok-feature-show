@@ -1,37 +1,31 @@
-export function isFeatureContext(before: string): boolean {
-
-    // 1. 必须在函数调用里
-    const inFunction =
-        /find_(one|feature)\s*\([^)]*$/.test(before);
-
-    if (!inFunction) return false;
-
-    // 2. 必须有 feature 参数（允许到逗号）
-    const hasFeature =
-        /feature(_name)?\s*=/.test(before);
-
-    if (!hasFeature) return false;
-
-    // 3. 关键：判断 list 是否打开
-    const lastFeatureIdx =
-        Math.max(
-            before.lastIndexOf('feature_name=['),
-            before.lastIndexOf('feature=[')
-        );
-
-    if (lastFeatureIdx !== -1) {
-
-        const after = before.substring(lastFeatureIdx);
-
-        const open = (after.match(/\[/g) || []).length;
-        const close = (after.match(/\]/g) || []).length;
-
-        // 在 list 内
-        if (open > close) {
-            return true;
-        }
+export function isFeatureArgumentContext(before: string): boolean {
+    const featureAssignment = /feature(_name)?\s*=/.test(before);
+    if (!featureAssignment) {
+        return false;
     }
 
-    // fallback：单值模式
+    const assignmentStart = Math.max(before.lastIndexOf('feature_name='), before.lastIndexOf('feature='));
+    const scope = assignmentStart >= 0 ? before.slice(assignmentStart) : before;
+
+    const openParens = (scope.match(/\(/g) || []).length;
+    const closeParens = (scope.match(/\)/g) || []).length;
+
+    if (closeParens > openParens) {
+        return false;
+    }
+
     return true;
+}
+
+export function isEnumMemberCompletion(before: string, enumClassName: string): boolean {
+    const escaped = enumClassName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`${escaped}\\.[A-Za-z_0-9]*$`);
+    return regex.test(before);
+}
+
+export function inferQuotedStringContext(linePrefix: string): boolean {
+    const unescapedDoubleQuotes = linePrefix.match(/(?<!\\)"/g)?.length ?? 0;
+    const unescapedSingleQuotes = linePrefix.match(/(?<!\\)'/g)?.length ?? 0;
+
+    return unescapedDoubleQuotes % 2 === 1 || unescapedSingleQuotes % 2 === 1;
 }
