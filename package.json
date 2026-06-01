@@ -21,6 +21,9 @@
         "build": "tsc -p .",
         "watch": "tsc -watch -p ."
     },
+    "dependencies": {
+        "sharp": "^0.34.2"
+    },
     "devDependencies": {
         "@types/node": "^20.19.41",
         "@types/vscode": "^1.90.0",

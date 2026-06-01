@@ -1,80 +1,95 @@
 import * as vscode from 'vscode';
 
-import { loadCategories } from '../coco/loader';
-import { isFeatureContext } from '../context/parser';
+import { ensureFeaturePreview } from '../coco/preview';
+import { isEnumMemberCompletion, inferQuotedStringContext, isFeatureArgumentContext } from '../context/parser';
+import { buildWorkspaceIndex } from '../workspace/workspaceIndex';
 
-export class FeatureCompletionProvider
-    implements vscode.CompletionItemProvider {
+export const ADD_ENUM_IMPORT_COMMAND = 'ok-feature-show.addEnumImport';
 
+export class FeatureCompletionProvider implements vscode.CompletionItemProvider {
     async provideCompletionItems(
         document: vscode.TextDocument,
         position: vscode.Position
     ): Promise<vscode.CompletionItem[] | undefined> {
+        const index = buildWorkspaceIndex();
+        if (!index || index.features.length === 0) {
+            return [];
+        }
 
-        console.log("completion triggered");
-        
-        const fullText = document.getText();
         const offset = document.offsetAt(position);
-        const before = fullText.substring(0, offset);
+        const before = document.getText().slice(0, offset);
 
-        // ❌ 在字符串里直接不触发
-        if (this.isInString(before)) {
+        if (!isFeatureArgumentContext(before)) {
             return [];
         }
 
-        // ❌ 只允许 feature context
-        if (!isFeatureContext(before)) {
-            return [];
+        if (index.enumInfo) {
+            if (isEnumMemberCompletion(before, index.enumInfo.className)) {
+                return Promise.all(index.enumInfo.entries.map(async (entry) => {
+                    const item = new vscode.CompletionItem(entry.enumKey, vscode.CompletionItemKind.EnumMember);
+                    item.insertText = entry.enumKey;
+                    item.detail = `Feature: ${entry.featureName}`;
+                    item.documentation = await this.buildDocumentation(index.rootPath, entry.featureName);
+                    return item;
+                }));
+            }
+
+            const enumClassItem = new vscode.CompletionItem(index.enumInfo.className, vscode.CompletionItemKind.Enum);
+            enumClassItem.insertText = index.enumInfo.className;
+            enumClassItem.detail = 'Feature Enum';
+            enumClassItem.documentation = `Auto import: \`${index.enumInfo.importStatement}\``;
+            enumClassItem.command = {
+                command: ADD_ENUM_IMPORT_COMMAND,
+                title: 'Add enum import',
+                arguments: [document.uri, index.enumInfo.importStatement]
+            };
+
+            return [enumClassItem];
         }
-        
-        const categories = await loadCategories();
 
-        return categories.map(category => {
+        const linePrefix = document.lineAt(position.line).text.slice(0, position.character);
+        const inQuotedString = inferQuotedStringContext(linePrefix);
 
-            const item = new vscode.CompletionItem(
-                category.name,
-                vscode.CompletionItemKind.Value
-            );
-
-            // =========================
-            // ✅ 关键：自动加双引号
-            // =========================
-            item.insertText = new vscode.SnippetString(`"${category.name}"`);
-
-            item.detail = "COCO Feature";
-
+        return Promise.all(index.features.map(async (feature) => {
+            const item = new vscode.CompletionItem(feature, vscode.CompletionItemKind.Value);
+            item.insertText = inQuotedString ? feature : `"${feature}"`;
+            item.detail = 'COCO Feature';
+            item.documentation = await this.buildDocumentation(index.rootPath, feature);
             return item;
-        });
+        }));
     }
 
-    // =========================
-    // 字符串检测（稳定版）
-    // =========================
-    private isInString(text: string): boolean {
+    private async buildDocumentation(rootPath: string, featureName: string): Promise<vscode.MarkdownString> {
+        const markdown = new vscode.MarkdownString();
+        markdown.isTrusted = true;
 
-        let inDouble = false;
-        let inSingle = false;
-        let escape = false;
+        const index = buildWorkspaceIndex();
+        const feature = index?.featureMap.get(featureName);
 
-        for (const c of text) {
+        markdown.appendMarkdown(`**Feature:** \`${featureName}\`\n\n`);
 
-            if (escape) {
-                escape = false;
-                continue;
-            }
-
-            if (c === '\\') {
-                escape = true;
-                continue;
-            }
-
-            if (c === '"' && !inSingle) {
-                inDouble = !inDouble;
-            } else if (c === "'" && !inDouble) {
-                inSingle = !inSingle;
-            }
+        if (!feature) {
+            markdown.appendMarkdown('_No COCO annotation matched._');
+            return markdown;
         }
 
-        return inDouble || inSingle;
+        if (feature.image?.file_name) {
+            markdown.appendMarkdown(`- Image: \`${feature.image.file_name}\`\n`);
+        }
+
+        if (feature.annotation?.bbox?.length) {
+            markdown.appendMarkdown(`- BBox: \`${feature.annotation.bbox.join(', ')}\`\n`);
+        }
+
+        if (feature.annotation?.id !== undefined) {
+            markdown.appendMarkdown(`- Annotation ID: \`${feature.annotation.id}\`\n`);
+        }
+
+        const previewPath = await ensureFeaturePreview(rootPath, feature);
+        if (previewPath) {
+            markdown.appendMarkdown(`\n![preview](${vscode.Uri.file(previewPath).toString()})`);
+        }
+
+        return markdown;
     }
 }
